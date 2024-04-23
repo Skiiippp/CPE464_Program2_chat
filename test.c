@@ -4,6 +4,8 @@
 
 int main() {
 
+
+
     insertEntry("BALLSFARTED", 69);
     insertEntry("IMFUCKINGGAY", 420);
     insertEntry("SHITASS", 4);
