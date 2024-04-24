@@ -6,16 +6,16 @@
 #include <stdio.h>
 
 #include "senrec.h"
+#include "common.h"
 
-#define MAXBUF 1024
 
-int sendPDU(int clientSocket, uint8_t * dataBuffer, int lengthOfData) {
-    uint16_t pduLength = lengthOfData + 2;
-    uint8_t pduBuff[MAXBUF];
+int sendPDU(int clientSocket, uint8_t *dataBuffer, int lengthOfData) {
+    uint16_t pduLength = lengthOfData + PACKET_LEN_SIZE;
+    uint8_t pduBuff[MAX_PACKET_SIZE];
     ssize_t bytesSent = 0;
     
     *((uint16_t *)pduBuff) = htons(pduLength);
-    memcpy(pduBuff + 2, dataBuffer, lengthOfData);
+    memcpy(pduBuff + PACKET_LEN_SIZE, dataBuffer, lengthOfData);
 
     bytesSent = send(clientSocket, pduBuff, pduLength, 0);
 
@@ -28,12 +28,12 @@ int sendPDU(int clientSocket, uint8_t * dataBuffer, int lengthOfData) {
 }
 
 int recvPDU(int socketNumber, uint8_t * dataBuffer, int bufferSize) {
-    uint8_t pduBuff[MAXBUF];
+    uint8_t pduBuff[MAX_PACKET_SIZE];
     uint16_t incomingBuffSize = 0;
     ssize_t bytesRecieved = 0;
 
     // Recieve header
-    if((bytesRecieved = recv(socketNumber, pduBuff, 2, MSG_WAITALL)) < 0) {
+    if((bytesRecieved = recv(socketNumber, pduBuff, PACKET_LEN_SIZE, MSG_WAITALL)) < 0) {
         if(errno == ECONNRESET) {
             return 0;
         }
@@ -43,13 +43,13 @@ int recvPDU(int socketNumber, uint8_t * dataBuffer, int bufferSize) {
         return 0;
     }
 
-    incomingBuffSize = ntohs(*(uint16_t *)pduBuff) - 2;
+    incomingBuffSize = ntohs(*(uint16_t *)pduBuff) - PACKET_LEN_SIZE;
     if(incomingBuffSize > bufferSize) {
         fprintf(stderr, "Error: Incoming buff bigger than supplied buff\n");
         return -1;
     }
 
-    if((bytesRecieved = recv(socketNumber, pduBuff + 2, incomingBuffSize, MSG_WAITALL)) < 0) {
+    if((bytesRecieved = recv(socketNumber, pduBuff + PACKET_LEN_SIZE, incomingBuffSize, MSG_WAITALL)) < 0) {
         if(errno == ECONNRESET) {
             return 0;
         }
@@ -57,7 +57,7 @@ int recvPDU(int socketNumber, uint8_t * dataBuffer, int bufferSize) {
         return -1;
     }
 
-    memcpy(dataBuffer, pduBuff + 2, incomingBuffSize);
+    memcpy(dataBuffer, pduBuff + PACKET_LEN_SIZE, incomingBuffSize);
 
     return bytesRecieved;
 }
