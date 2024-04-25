@@ -5,6 +5,7 @@
 void insertEntry(const char *handle, int socketNum);
 char *getHandle(int socketNum);
 int getSocketNum(const char *handle);
+int handleInUse(const char *handle);
 void cleanupTable();
 
 #endif

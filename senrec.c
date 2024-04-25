@@ -8,7 +8,9 @@
 #include "senrec.h"
 #include "common.h"
 
-
+/**
+ * Expects flag at start of packet
+*/
 int sendPDU(int clientSocket, uint8_t *dataBuffer, int lengthOfData) {
     uint16_t pduLength = lengthOfData + PACKET_LEN_SIZE;
     uint8_t pduBuff[MAX_PACKET_SIZE];

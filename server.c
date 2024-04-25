@@ -33,7 +33,6 @@
 
 #define DEBUG_FLAG 1
 
-static uint8_t intFlag = 0;
 
 struct ServerInfo {
 	int mainServerSocket;
@@ -43,8 +42,7 @@ struct ServerInfo {
 /**
  * Check args and return port number
 */
-int checkArgs(int argc, char *argv[])
-{
+int checkArgs(int argc, char *argv[]) {
 	int portNumber = 0;
 
 	if (argc > 2){
@@ -60,13 +58,6 @@ int checkArgs(int argc, char *argv[])
 }
 
 /**
- * Handle interrupt
-*/
-void intHandler() {
-	intFlag = 1;
-}
-
-/**
  * Setup server
 */
 void serverSetup(struct ServerInfo *serverInfoPtr, int argc, char **argv) {
@@ -74,9 +65,9 @@ void serverSetup(struct ServerInfo *serverInfoPtr, int argc, char **argv) {
 	serverInfoPtr->portNumber = checkArgs(argc, argv);
 	serverInfoPtr->mainServerSocket = tcpServerSetup(serverInfoPtr->portNumber);
 
-	signal(SIGINT, intHandler);
-
 	setupPollSet();
+	addToPollSet(serverInfoPtr->mainServerSocket);
+
 }
 
 /**
@@ -88,15 +79,66 @@ void serverTeardown(const struct ServerInfo *serverInfoPtr) {
 	cleanupTable();
 }
 
-void serverControl(struct ServerInfo *serverInfoPtr) {
-	
-	while(!intFlag) {
+/**
+ * Tell client bad connection
+*/
+void sendClientInitError(int clientSocket) {
+	uint8_t dataBuffer[FLAG_SIZE];
 
+	dataBuffer[0] = 3;
+	sendPDU(clientSocket, dataBuffer, FLAG_SIZE);
+}
+
+/**
+ * Tell client good connection
+*/
+void sendClientInitGood(int clientSocket) {
+	uint8_t dataBuffer[FLAG_SIZE];
+
+	dataBuffer[0] = 2;
+	sendPDU(clientSocket, dataBuffer, FLAG_SIZE);
+}
+
+/**
+ * Add new client
+*/
+void addClient(struct ServerInfo *serverInfoPtr) {
+	uint8_t dataBuffer[MAX_PACKET_SIZE];
+	char *newHandle;
+	int clientSocket;
+
+	clientSocket = tcpAccept(serverInfoPtr->mainServerSocket, DEBUG_FLAG);
+
+	addToPollSet(clientSocket);
+	clientSocket = pollCall(-1);	// Should be from clientSocket
+	recvPDU(clientSocket, dataBuffer, MAX_PACKET_SIZE);
+	newHandle = (char *)dataBuffer + F1_HEADER_OFFSET;
+
+	if(dataBuffer[0] != 1 || handleInUse(newHandle)) {
+		removeFromPollSet(clientSocket);
+		sendClientInitError(clientSocket);
+		close(clientSocket);
+	} else {
+		insertEntry(newHandle, clientSocket);
+		sendClientInitGood(clientSocket);
 	}
 }
 
-int main(int argc, char *argv[])
-{
+/**
+ * Control server
+*/
+void serverControl(struct ServerInfo *serverInfoPtr) {
+	int pollSocket = 0;
+
+	while(1) {
+		
+		if((pollSocket = pollCall(-1)) == serverInfoPtr->mainServerSocket) {
+			addClient(serverInfoPtr);
+		}
+	}
+}
+
+int main(int argc, char **argv) {
 	struct ServerInfo serverInfo;
 
 	serverSetup(&serverInfo, argc, argv);

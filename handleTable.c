@@ -32,7 +32,7 @@ static void fillNewEntry(const char *handle, int socketNum) {
     struct TableEntry *newEntryPtr;
 
     newEntryPtr = &serverHandleTable[tableSize - 1];
-    strncpy(newEntryPtr->handle, handle, ENTRY_SIZE);
+    strncpy(newEntryPtr->handle, handle, HANDLE_SIZE);
 
     newEntryPtr->socketNum = socketNum;
 }
@@ -65,6 +65,20 @@ char *getHandle(int socketNum) {
     }
 
     return NULL;
+}
+
+/**
+ * Check if handle in use
+ * Ret 0 if in use
+*/
+int handleInUse(const char *handle) {
+
+
+    if(tableSize == 0 || getSocketNum(handle) == -1) {
+        return 0;
+    }
+    
+    return 1;
 }
 
 /**

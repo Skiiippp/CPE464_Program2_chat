@@ -65,7 +65,7 @@ int tcpServerSetup(int serverPort)
 		exit(-1);
 	}
 	
-	printf("Server Port Number %d \n", ntohs(serverAddress.sin6_port));
+	printf("Server is using port %d \n", ntohs(serverAddress.sin6_port));
 	
 	return mainServerSocket;
 }
@@ -87,8 +87,8 @@ int tcpAccept(int mainServerSocket, int debugFlag)
 	  
 	if (debugFlag)
 	{
-		printf("Client accepted.  Client IP: %s Client Port Number: %d\n",  
-				getIPAddressString6(clientAddress.sin6_addr.s6_addr), ntohs(clientAddress.sin6_port));
+		//printf("Client accepted.  Client IP: %s Client Port Number: %d\n",  
+		//		getIPAddressString6(clientAddress.sin6_addr.s6_addr), ntohs(clientAddress.sin6_port));
 	}
 	
 
@@ -132,7 +132,7 @@ int tcpClientSetup(char * serverName, char * serverPort, int debugFlag)
 
 	if (debugFlag)
 	{
-		printf("Connected to %s IP: %s Port Number: %d\n", serverName, getIPAddressString6(ipAddress), atoi(serverPort));
+		//printf("Connected to %s IP: %s Port Number: %d\n", serverName, getIPAddressString6(ipAddress), atoi(serverPort));
 	}
 	
 	return socket_num;
@@ -170,7 +170,7 @@ int udpServerSetup(int serverPort)
 	/* Get the port number */
 	serverAddrLen = sizeof(serverAddress);
 	getsockname(socketNum,(struct sockaddr *) &serverAddress,  (socklen_t *) &serverAddrLen);
-	printf("Server using Port #: %d\n", ntohs(serverAddress.sin6_port));
+	printf("Server using Port %d\n", ntohs(serverAddress.sin6_port));
 
 	return socketNum;	
 	

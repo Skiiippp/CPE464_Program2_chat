@@ -3,6 +3,7 @@
 *
 * Writen by Prof. Smith, updated Jan 2023
 * Use at your own risk.  
+* Updated by James Gruber April
 *
 *****************************************************************************/
 
@@ -26,129 +27,127 @@
 #include "pollLib.h"
 
 #include "senrec.h"
+#include "common.h"
 
-#define MAXBUF 1024
 #define DEBUG_FLAG 1
 
-void processStdin(int socketNum);
-void processMsgFromServer();
-void clientControl(int socketNum);
-void sendToServer(int socketNum);
-int readFromStdin(uint8_t * buffer);
-void checkArgs(int argc, char * argv[]);
+struct ClientInfo {
+	int socketNum;
+	char handle[MAX_HANDLE_SIZE];	
+	uint8_t handleLen;
+};
 
-int main(int argc, char * argv[])
-{
-	int socketNum = 0;         //socket descriptor
+void checkArgs(int argc, char **argv) {
 
-	setupPollSet();
+	if (argc != 4) {
+		fprintf(stderr, "usage: %s handle host-name port-number \n", argv[0]);
+		exit(-1);
+	}
+
+	if(strlen(argv[1]) > MAX_HANDLE_SIZE) {
+		fprintf(stderr, "Invalid handle, handle longer than 100 characters: %s\n", argv[1]);
+		exit(-1);
+	}
+}
+
+/**
+ * Wait for initial resp from server
+*/
+void waitForInitResp(struct ClientInfo *clientInfoPtr) {
+	int bytesRecieved = 0;
+	uint8_t contFlag = 0;
+	uint8_t dataBuffer[FLAG_SIZE];	// Just flag
+
+	while(!contFlag) {
+
+		if(pollCall(-1) == clientInfoPtr->socketNum) {
+			
+			bytesRecieved = recvPDU(clientInfoPtr->socketNum, dataBuffer, FLAG_SIZE);
+			if(bytesRecieved == 0) {
+				fprintf(stderr, "Server Terminated\n");
+				exit(-1);
+			} else if(bytesRecieved == -1) {
+				fprintf(stderr, "Unknown error occured on initial client recv call\n");
+				exit(-1);
+			}
+
+			if(dataBuffer[0] == 2) {
+				contFlag = 1;	// Successful connection established
+			} else if(dataBuffer[0] == 3) {
+				fprintf(stderr, "Handle already in use: %s\n", clientInfoPtr->handle);
+				exit(-1);				
+			}
+		}
+	}
+}
+
+/**
+ * Sends initial logon packet to server
+*/
+void sendInitialPacket(struct ClientInfo *clientInfoPtr) {
+	int lengthOfData = 0;
+	uint8_t dataBuffer[MAX_PACKET_SIZE];
+
+	lengthOfData = FLAG_SIZE + HANDLE_LEN_SIZE + clientInfoPtr->handleLen;
 	
+	dataBuffer[0] = 1;	// Flag
+	dataBuffer[1] = clientInfoPtr->handleLen;
+	memcpy(dataBuffer + 2, clientInfoPtr->handle, clientInfoPtr->handleLen);
+
+	sendPDU(clientInfoPtr->socketNum, dataBuffer, lengthOfData);
+}
+
+void establishConnection(struct ClientInfo *clientInfoPtr) {
+
+	sendInitialPacket(clientInfoPtr);
+	waitForInitResp(clientInfoPtr);
+}
+
+/**
+ * Setup client
+*/
+void clientSetup(struct ClientInfo *clientInfoPtr, int argc, char **argv) {
+
 	checkArgs(argc, argv);
 
-	/* set up the TCP Client socket  */
-	socketNum = tcpClientSetup(argv[1], argv[2], DEBUG_FLAG);
+	clientInfoPtr->socketNum = tcpClientSetup(argv[2], argv[3], DEBUG_FLAG);
+	clientInfoPtr->handleLen = strlen(argv[1]);
+	strncpy(clientInfoPtr->handle, argv[1], MAX_HANDLE_SIZE);
+	clientInfoPtr->handleLen = strlen(clientInfoPtr->handle);
+
+	setupPollSet();
+	addToPollSet(clientInfoPtr->socketNum);
+	addToPollSet(STDIN_FILENO);
+
+	establishConnection(clientInfoPtr);
+}
+
+/**
+ * Teardown client
+*/
+void clientTeardown(struct ClientInfo *clientInfoPtr) {
 	
-	//sendToServer(socketNum);
-	clientControl(socketNum);
-	
-	close(socketNum);
+	removeFromPollSet(clientInfoPtr->socketNum);
+	close(clientInfoPtr->socketNum);
+}
+
+/**
+ * Control client
+*/
+void clientControl(struct ClientInfo *clientInfoPtr) {
+
+	while(1) {
+
+	}
+}
+
+int main(int argc, char **argv) {
+	struct ClientInfo clientInfo;
+
+	clientSetup(&clientInfo, argc, argv);
+	clientControl(&clientInfo);
+	clientTeardown(&clientInfo);
 	
 	return 0;
 }
 
-void processStdin(int socketNum) {
-	uint8_t inBuff[MAXBUF];
-	ssize_t inSize = 0;
-
-	inSize = read(STDIN_FILENO, inBuff, MAXBUF - 1);
-	inBuff[inSize - 1] = '\0';
-	sendPDU(socketNum, inBuff, inSize);
-}
-
-void processMsgFromServer(int socketNum) {
-	uint8_t inBuff[MAXBUF];
-	ssize_t inSize = 0;
-
-	inSize = recvPDU(socketNum, inBuff, MAXBUF);
-	if(inSize == 0) {
-		fprintf(stderr, "\nServer has terminated\n");
-		exit(0);
-	}
-	printf("%s", inBuff);
-}
-
-void clientControl(int socketNum) {
-	int pollRet = 0;
-
-	addToPollSet(socketNum);
-	addToPollSet(STDIN_FILENO);
-	while(1) {
-		printf("Enter Data: ");
-		fflush(stdout);
-		if((pollRet = pollCall(-1)) == STDIN_FILENO) {
-			processStdin(socketNum);
-		}
-
-		if(pollRet == socketNum || pollCall(-1) == socketNum) {
-			processMsgFromServer(socketNum);
-		}
-
-	}
-
-}
-
-void sendToServer(int socketNum)
-{
-	uint8_t sendBuf[MAXBUF];   //data buffer
-	int sendLen = 0;        //amount of data to send
-	int sent = 0;            //actual amount of data sent/* get the data and send it   */
-	
-	sendLen = readFromStdin(sendBuf);
-	printf("read: %s string len: %d (including null)\n", sendBuf, sendLen);
-
-	sent = sendPDU(socketNum, sendBuf, sendLen);
-	if(sent < 0) {
-		fprintf(stderr, "Error: sendPDU ret -1\n");
-		exit(-1);
-	} else if(sent == 0) {
-		fprintf(stderr, "Server has terminated\n");
-		exit(0);
-	}
-
-	printf("Amount of data sent is: %d\n", sent);
-}
-
-int readFromStdin(uint8_t * buffer)
-{
-	char aChar = 0;
-	int inputLen = 0;        
-	
-	// Important you don't input more characters than you have space 
-	buffer[0] = '\0';
-	printf("Enter data: ");
-	while (inputLen < (MAXBUF - 1) && aChar != '\n')
-	{
-		aChar = getchar();
-		if (aChar != '\n')
-		{
-			buffer[inputLen] = aChar;
-			inputLen++;
-		}
-	}
-	
-	// Null terminate the string
-	buffer[inputLen] = '\0';
-	inputLen++;
-	
-	return inputLen;
-}
-
-void checkArgs(int argc, char * argv[])
-{
-	/* check command line arguments  */
-	if (argc != 3)
-	{
-		printf("usage: %s host-name port-number \n", argv[0]);
-		exit(1);
-	}
-}

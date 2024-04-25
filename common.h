@@ -10,5 +10,12 @@
 */
 #define MAX_PACKET_SIZE 1204
 #define PACKET_LEN_SIZE 2
+#define MAX_HANDLE_SIZE 100	// Counting null
+#define CHAT_HEADER_SIZE 3
+#define HANDLE_LEN_SIZE 1
+#define FLAG_SIZE 1
+
+// Flag 1 packet
+#define F1_HEADER_OFFSET 2
 
 #endif
