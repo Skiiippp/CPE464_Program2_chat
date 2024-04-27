@@ -2,20 +2,47 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+#include <stdint.h>
+
 /**
  * 3 byte header, 1 byte length of client handle, 99 bytes for client handle name,
  * 1 byte for # dest. clients (max 9 for %C), (1 byte for len of dest handle, 99 bytes
  *  for dest handle name) * 9, 200 bytes for text message = 1204 bytes
  * 
 */
-#define MAX_PACKET_SIZE 1204
+#define MAX_PACKET_SIZE 1300 // ~100 greater than needed, for saftey - originally 1204
 #define PACKET_LEN_SIZE 2
 #define MAX_HANDLE_SIZE 100	// Counting null
 #define CHAT_HEADER_SIZE 3
 #define HANDLE_LEN_SIZE 1
 #define FLAG_SIZE 1
+#define MAX_INPUT_SIZE 1400
+#define MAX_DEST_CLIENT 9 // On multicast
+#define F1_HEADER_OFFSET 2 // Flag 1 packet
+#define MSG_INPUT_OFFSET_TO_HANDLE 3
+#define MULT_INPUT_OFFSET_TO_NUM_HANDLES 3
+#define MULT_INPUT_OFFSET_TO_HANDLES 5
+#define MAX_TEXT_SIZE 200
 
-// Flag 1 packet
-#define F1_HEADER_OFFSET 2
+// Handle and length
+struct HandleInfo {
+	char handle[MAX_HANDLE_SIZE];
+	uint8_t handleLen;
+};
+
+// For message and multicast
+struct MulticastPacketInfo {
+	struct HandleInfo senderInfo;
+	uint8_t numDestHandles;
+	struct HandleInfo handleInfoList[MAX_DEST_CLIENT];
+	char *message;
+};
+
+/**
+ * Read string - return length of string
+*/
+int getHandleLen(char *inputStr);
+
+
 
 #endif
