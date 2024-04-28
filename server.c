@@ -37,6 +37,7 @@
 struct ServerInfo {
 	int mainServerSocket;
 	int portNumber;
+	int currClientSocket;
 };
 
 /**
@@ -125,15 +126,117 @@ void addClient(struct ServerInfo *serverInfoPtr) {
 }
 
 /**
+ * Send to sending client that a given handle doesn't exist
+*/
+void sendNoHandle(struct HandleInfo *handleInfoPtr, const struct ServerInfo *serverInfoPtr) {
+	uint8_t packetBuffer[MAX_PACKET_SIZE];
+	int packetLen = 0;
+
+	packetBuffer[0] = 7;	// Flag
+	packetBuffer[1] = handleInfoPtr->handleLen;
+	memcpy(packetBuffer + 2, (uint8_t *)handleInfoPtr->handle, handleInfoPtr->handleLen);
+	packetLen = 2 + handleInfoPtr->handleLen;
+
+	sendPDU(serverInfoPtr->currClientSocket, packetBuffer, packetLen);
+}
+
+/**
+ * Send message to client
+*/
+void sendMessage(int destSocket, struct MulticastPacketInfo *multicastPacketInfoPtr) {
+
+	sendPDU(destSocket, multicastPacketInfoPtr->packetBuffer, multicastPacketInfoPtr->packetLen);
+}
+
+/**
+ * Forward multicast/message. Send errors to source if needed.
+*/
+void forwardMulticast(struct MulticastPacketInfo *multPacketInfoPtr, const struct ServerInfo *serverInfoPtr) {
+	struct HandleInfo *handleInfoList = multPacketInfoPtr->handleInfoList;
+	int currSocNum = 0;
+
+	for(int i = 0; i < multPacketInfoPtr->numDestHandles; i++) {
+		currSocNum = getSocketNum(handleInfoList[i].handle);
+		if(currSocNum == -1) {
+			sendNoHandle(&handleInfoList[i], serverInfoPtr);
+		} else {
+			sendMessage(currSocNum, multPacketInfoPtr);
+		}
+	}
+}
+
+/**
+ * Handle multicast, should work for message too
+*/
+void handleMulticast(const struct ServerInfo *serverInfoPtr, uint8_t *incomPacket, int incomPacketSize) {
+	struct MulticastPacketInfo multPacketInfo;
+
+	multPacketInfo.packetLen = incomPacketSize;
+	multPacketInfo.packetBuffer = incomPacket;
+	populatePacketInfo(&multPacketInfo);
+	forwardMulticast(&multPacketInfo, serverInfoPtr);
+
+}
+
+/**
+ * Handle client exiting
+*/
+void handleExit(const struct ServerInfo *serverInfoPtr) {
+	uint8_t packetBuffer[FLAG_SIZE];
+
+	packetBuffer[0] = 9;
+	sendPDU(serverInfoPtr->currClientSocket, packetBuffer, FLAG_SIZE);
+
+	socRemoveFromTable(serverInfoPtr->currClientSocket);
+	removeFromPollSet(serverInfoPtr->currClientSocket);
+	close(serverInfoPtr->currClientSocket);
+}
+
+/**
+ * Handle client 
+*/
+void handleClient(const struct ServerInfo *serverInfoPtr) {
+	uint8_t incomPacket[MAX_PACKET_SIZE];
+	int incomPacketSize;
+	uint8_t flag = 0;
+
+	incomPacketSize = recvPDU(serverInfoPtr->currClientSocket, incomPacket, MAX_PACKET_SIZE);
+	if(incomPacketSize == 0) {
+		fprintf(stderr, "Client exited improperly\n");
+		socRemoveFromTable(serverInfoPtr->currClientSocket);
+		removeFromPollSet(serverInfoPtr->currClientSocket);
+		close(serverInfoPtr->currClientSocket);
+		return;
+	}
+
+	flag = incomPacket[0];
+
+	switch(flag) {
+		case 5:
+		case 6:	
+			handleMulticast(serverInfoPtr, incomPacket, incomPacketSize);
+			break;
+		case 8:
+			handleExit(serverInfoPtr);
+			break;
+		default:
+			fprintf(stderr, "Server: Unknown flag\n");
+	}
+}
+
+/**
  * Control server
 */
 void serverControl(struct ServerInfo *serverInfoPtr) {
 	int pollSocket = 0;
 
 	while(1) {
-		
-		if((pollSocket = pollCall(-1)) == serverInfoPtr->mainServerSocket) {
+		pollSocket = pollCall(-1);
+		serverInfoPtr->currClientSocket = pollSocket;
+		if(pollSocket == serverInfoPtr->mainServerSocket) {
 			addClient(serverInfoPtr);
+		} else {
+			handleClient(serverInfoPtr);
 		}
 	}
 }

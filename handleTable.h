@@ -2,6 +2,7 @@
 #ifndef HANDLETABLE_H
 #define HANDLETABLE_H
 
+void socRemoveFromTable(int socketNum);
 void insertEntry(const char *handle, int socketNum);
 char *getHandle(int socketNum);
 int getSocketNum(const char *handle);

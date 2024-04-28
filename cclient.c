@@ -160,17 +160,20 @@ int readFromStdin(uint8_t * buffer) {
 /**
  * Populate handle info array in multicast info struct
  * Input buffer should start at point where handle names begin
+ * Only fills packet len from flag to message
 */
 void fillMultHandles(struct MulticastPacketInfo *multPktInfoPtr, uint8_t *inputBuffer) {
 	int numHandles;
 	struct HandleInfo *infoList;
 	uint8_t handleLen;
 	uint8_t *currentBuff = inputBuffer;
+	int packetLen = multPktInfoPtr->senderInfo.handleLen + 3; // flag, sending size, # headers
 
 	numHandles = multPktInfoPtr->numDestHandles;
 	infoList = multPktInfoPtr->handleInfoList;
 	for(int i = 0; i < numHandles; i++) {
-		handleLen = getHandleLen((char *)currentBuff);
+		handleLen = getStrLen((char *)currentBuff);
+		packetLen += (1 + handleLen);	// 1 for handle size
 		infoList[i].handleLen = handleLen;
 		memcpy(infoList[i].handle, currentBuff, handleLen);
 		infoList[i].handle[handleLen] = '\0';	// set null terminator
@@ -178,6 +181,7 @@ void fillMultHandles(struct MulticastPacketInfo *multPktInfoPtr, uint8_t *inputB
 	}
 
 	multPktInfoPtr->message = (char *)currentBuff;
+	multPktInfoPtr->packetLen = packetLen;
 }
 
 /**
@@ -192,6 +196,8 @@ void packMultPacket(struct MulticastPacketInfo *multPktInfoPtr, uint8_t *packetB
 	currPacketBuff += 1;
 	memcpy(currPacketBuff, senderInfoPtr->handle, senderInfoPtr->handleLen);
 	currPacketBuff += senderInfoPtr->handleLen;
+	currPacketBuff[0] = multPktInfoPtr->numDestHandles;
+	currPacketBuff += 1;
 
 	for(int i = 0; i < multPktInfoPtr->numDestHandles; i++) {
 		currDestInfoPtr = &(multPktInfoPtr->handleInfoList[i]);
@@ -201,7 +207,8 @@ void packMultPacket(struct MulticastPacketInfo *multPktInfoPtr, uint8_t *packetB
 		currPacketBuff += currDestInfoPtr->handleLen;
 	}
 
-	strncpy((char *)currPacketBuff, multPktInfoPtr->message, MAX_TEXT_SIZE); 
+	strncpy((char *)currPacketBuff, multPktInfoPtr->message, MAX_TEXT_SIZE);
+	multPktInfoPtr->packetLen += strlen((char *)currPacketBuff) + 1; // 1 for null 
 }
 
 /**
@@ -218,6 +225,8 @@ void sendMessage(struct ClientInfo *clientInfoPtr, uint8_t *inputBuffer) {
 	packetBuffer[0] = 5;	// flag
 	fillMultHandles(&msgPktInfo, inputBuffer + MSG_INPUT_OFFSET_TO_HANDLE);
 	packMultPacket(&msgPktInfo, packetBuffer + FLAG_SIZE);
+
+	sendPDU(clientInfoPtr->socketNum, packetBuffer, msgPktInfo.packetLen);
 } 
 
 /**
@@ -238,24 +247,32 @@ void sendMulticast(struct ClientInfo *clientInfoPtr, uint8_t *inputBuffer) {
 	strncpy(multPktInfo.senderInfo.handle, clientInfoPtr->handle, MAX_HANDLE_SIZE);
 	multPktInfo.numDestHandles = atoi((char *)(inputBuffer + MULT_INPUT_OFFSET_TO_NUM_HANDLES));
 
+	if(multPktInfo.numDestHandles < 2 || multPktInfo.numDestHandles > 9) {
+		fprintf(stderr, "Invalid number of destination handles for multicast\n");
+	}
+
 	fillMultHandles(&multPktInfo, inputBuffer + MULT_INPUT_OFFSET_TO_HANDLES);
 	packetBuffer[0] = 6; // flag
 	packMultPacket(&multPktInfo, packetBuffer + FLAG_SIZE);
+
+	sendPDU(clientInfoPtr->socketNum, packetBuffer, multPktInfo.packetLen);
 }
 
 /**
  * Ask server for client listing
 */
-void sendListing(struct ClientInfo *clientInfoPtr, uint8_t *inputBuffer) {
+void sendListing(struct ClientInfo *clientInfoPtr) {
 
 }
 
 /**
  * Request disconnect from server - NEED TO COMPLETE
 */
-void sendExit(struct ClientInfo *clientInfoPtr, uint8_t *inputBuffer) {
-
-	close(clientInfoPtr->socketNum);
+void sendExit(struct ClientInfo *clientInfoPtr) {
+	uint8_t packetBuffer[FLAG_SIZE];
+	
+	packetBuffer[0] = 8;
+	sendPDU(clientInfoPtr->socketNum, packetBuffer, FLAG_SIZE);
 }
 
 /**
@@ -286,11 +303,11 @@ void processInput(struct ClientInfo *clientInfoPtr) {
 			break;
 		case 'L':
 		case 'l':
-			sendListing(clientInfoPtr, inputBuffer);
+			sendListing(clientInfoPtr);
 			break;
 		case 'E':
 		case 'e': 
-			sendListing(clientInfoPtr, inputBuffer);
+			sendExit(clientInfoPtr);
 			break;
 		default:
 			printf("Invalid command\n");
@@ -299,17 +316,55 @@ void processInput(struct ClientInfo *clientInfoPtr) {
 }
 
 /**
+ * Server couldnt find handle
+*/
+void handleNotFound(uint8_t *packetBuffer) {
+	struct HandleInfo handleInfo;
+
+	popHandleInfo(&handleInfo, packetBuffer + FLAG_SIZE);
+	fprintf(stderr, "\nClient with handle %s does not exist\n", handleInfo.handle);
+}
+
+void recvMulticast(uint8_t *packetBuffer, int packetLen) {
+	struct MulticastPacketInfo multicastPacketInfo;
+
+	multicastPacketInfo.packetLen = packetLen;
+	multicastPacketInfo.packetBuffer = packetBuffer;
+	populatePacketInfo(&multicastPacketInfo);
+
+	printf("\n%s: %s\n", multicastPacketInfo.senderInfo.handle, multicastPacketInfo.message);
+}
+
+/**
  * Process message from server
 */
-void processMsgFromServer(struct ClientInfo *clientInfoPtr) {
+void processMsgFromServer(struct ClientInfo *clientInfoPtr, uint8_t *exitFlagPtr) {
 	uint8_t dataBuffer[MAX_PACKET_SIZE];
 	int inputSize;
+	uint8_t flag;
 
 	inputSize = recvPDU(clientInfoPtr->socketNum, dataBuffer, MAX_PACKET_SIZE);
 	if(inputSize == 0) {
 		fprintf(stderr, "Server Terminated\n");
 		clientTeardown(clientInfoPtr);
 		exit(-1);
+	} 
+
+	flag = dataBuffer[0];
+	switch(flag) {
+		case 5:
+		case 6:
+			recvMulticast(dataBuffer, inputSize);
+			break;
+		case 7:
+			handleNotFound(dataBuffer);
+			break;
+		case 9:
+			*exitFlagPtr = 1;
+			printf("\n");
+			break;
+		default:
+			fprintf(stderr, "Unknown flag\n");
 	}
 }
 
@@ -318,16 +373,17 @@ void processMsgFromServer(struct ClientInfo *clientInfoPtr) {
 */
 void clientControl(struct ClientInfo *clientInfoPtr) {
 	int socketInUse = 0;
+	uint8_t exitFlag = 0;
 
 	printf("$: ");
 	fflush(stdout);
 
-	while(1) {
+	while(!exitFlag) {
 		socketInUse = pollCall(-1);
 		if(socketInUse == STDIN_FILENO) {
 			processInput(clientInfoPtr);
 		} else {
-			processMsgFromServer(clientInfoPtr);
+			processMsgFromServer(clientInfoPtr, &exitFlag);
 		}
 
 		printf("$: ");
@@ -340,8 +396,10 @@ int main(int argc, char **argv) {
 
 	clientSetup(&clientInfo, argc, argv);
 	clientControl(&clientInfo);
-	clientTeardown(&clientInfo);	// Likely unecessary
+	clientTeardown(&clientInfo);	
 	
+	printf("\n");
+
 	return 0;
 }
 

@@ -36,13 +36,25 @@ struct MulticastPacketInfo {
 	uint8_t numDestHandles;
 	struct HandleInfo handleInfoList[MAX_DEST_CLIENT];
 	char *message;
+	int packetLen;	// starting at flag
+	uint8_t *packetBuffer;
 };
 
 /**
- * Read string - return length of string
+ * Read string - return length of string term with spaces
 */
-int getHandleLen(char *inputStr);
+int getStrLen(char *inputStr);
+
+/**
+ * Given packet buffer pointing to handle length, populate a handle info struct
+*/
+void popHandleInfo(struct HandleInfo *handleInfoPtr, uint8_t *packetBuffer);
 
 
+/**
+ * Populate the fields of multicast packet struct from a packet buffer
+ * Length and packet fields of struct should already be populated
+*/
+void populatePacketInfo(struct MulticastPacketInfo *multPacketInfoPtr);
 
 #endif
