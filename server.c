@@ -84,20 +84,14 @@ void serverTeardown(const struct ServerInfo *serverInfoPtr) {
  * Tell client bad connection
 */
 void sendClientInitError(int clientSocket) {
-	uint8_t dataBuffer[FLAG_SIZE];
-
-	dataBuffer[0] = 3;
-	sendPDU(clientSocket, dataBuffer, FLAG_SIZE);
+	sendHeaderOnly(clientSocket, 3);
 }
 
 /**
  * Tell client good connection
 */
 void sendClientInitGood(int clientSocket) {
-	uint8_t dataBuffer[FLAG_SIZE];
-
-	dataBuffer[0] = 2;
-	sendPDU(clientSocket, dataBuffer, FLAG_SIZE);
+	sendHeaderOnly(clientSocket, 2);
 }
 
 /**
@@ -105,7 +99,8 @@ void sendClientInitGood(int clientSocket) {
 */
 void addClient(struct ServerInfo *serverInfoPtr) {
 	uint8_t dataBuffer[MAX_PACKET_SIZE];
-	char *newHandle;
+	char newHandle[MAX_HANDLE_SIZE];
+	uint8_t newHandleLen = 0;
 	int clientSocket;
 
 	clientSocket = tcpAccept(serverInfoPtr->mainServerSocket, DEBUG_FLAG);
@@ -113,7 +108,9 @@ void addClient(struct ServerInfo *serverInfoPtr) {
 	addToPollSet(clientSocket);
 	clientSocket = pollCall(-1);	// Should be from clientSocket
 	recvPDU(clientSocket, dataBuffer, MAX_PACKET_SIZE);
-	newHandle = (char *)dataBuffer + F1_HEADER_OFFSET;
+	newHandleLen = dataBuffer[FLAG_SIZE];
+	memcpy(newHandle, (char *)(dataBuffer + FLAG_SIZE + HANDLE_LEN_SIZE), newHandleLen);
+	newHandle[newHandleLen] = '\0';
 
 	if(dataBuffer[0] != 1 || handleInUse(newHandle)) {
 		removeFromPollSet(clientSocket);
@@ -179,17 +176,65 @@ void handleMulticast(const struct ServerInfo *serverInfoPtr, uint8_t *incomPacke
 }
 
 /**
- * Handle client exiting
+ * Handle client exit request
 */
 void handleExit(const struct ServerInfo *serverInfoPtr) {
-	uint8_t packetBuffer[FLAG_SIZE];
-
-	packetBuffer[0] = 9;
-	sendPDU(serverInfoPtr->currClientSocket, packetBuffer, FLAG_SIZE);
-
+	
+	sendHeaderOnly(serverInfoPtr->currClientSocket, 9);
 	socRemoveFromTable(serverInfoPtr->currClientSocket);
 	removeFromPollSet(serverInfoPtr->currClientSocket);
 	close(serverInfoPtr->currClientSocket);
+}
+
+/**
+ * Send num handles packet to client
+*/
+void sendNumHandles(const struct ServerInfo *serverInfoPtr, int numHandles) {
+	uint8_t packetBuffer[F11_PKT_SIZE];
+
+	packetBuffer[0] = 11;
+	*(uint32_t *)(packetBuffer + FLAG_SIZE) = htonl(numHandles);
+
+	sendPDU(serverInfoPtr->currClientSocket, packetBuffer, F11_PKT_SIZE);
+}
+
+/**
+ * Send handle info to client for listing request
+*/
+void sendHandleInfo(const struct ServerInfo *serverInfoPtr, const struct GlobalEntry *gEntryPtr) {
+	uint8_t packetBuffer[MAX_PACKET_SIZE];
+	uint8_t handleLen;
+
+	handleLen = strlen(gEntryPtr->handle);
+	
+	packetBuffer[0] = 12; // Flag
+	packetBuffer[1] = handleLen;
+	memcpy(packetBuffer + 2, (uint8_t *)(gEntryPtr->handle), handleLen);
+	sendPDU(serverInfoPtr->currClientSocket, packetBuffer, handleLen + 2);
+}
+
+/**
+ * Send final %L packet
+*/
+void sendListingEnd(const struct ServerInfo *serverInfoPtr) {
+	sendHeaderOnly(serverInfoPtr->currClientSocket, 13);
+}
+
+/**
+ * Handle client request for handle listing
+*/
+void handleListing(const struct ServerInfo *serverInfoPtr) {
+	int numHandles = 0;
+	struct GlobalEntry globalEntry;
+
+	numHandles = getNumHandles();
+	sendNumHandles(serverInfoPtr, numHandles);
+
+	while(getNextHandle(&globalEntry) != -1) {
+		sendHandleInfo(serverInfoPtr, &globalEntry);
+	}
+
+	sendListingEnd(serverInfoPtr);
 }
 
 /**
@@ -202,7 +247,6 @@ void handleClient(const struct ServerInfo *serverInfoPtr) {
 
 	incomPacketSize = recvPDU(serverInfoPtr->currClientSocket, incomPacket, MAX_PACKET_SIZE);
 	if(incomPacketSize == 0) {
-		fprintf(stderr, "Client exited improperly\n");
 		socRemoveFromTable(serverInfoPtr->currClientSocket);
 		removeFromPollSet(serverInfoPtr->currClientSocket);
 		close(serverInfoPtr->currClientSocket);
@@ -218,6 +262,9 @@ void handleClient(const struct ServerInfo *serverInfoPtr) {
 			break;
 		case 8:
 			handleExit(serverInfoPtr);
+			break;
+		case 10:
+			handleListing(serverInfoPtr);
 			break;
 		default:
 			fprintf(stderr, "Server: Unknown flag\n");

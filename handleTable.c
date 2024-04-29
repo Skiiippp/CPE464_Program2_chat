@@ -14,6 +14,10 @@
 // Globals
 static struct TableEntry *serverHandleTable;
 static int tableSize = 0;
+static int numHandles = 0;
+
+// For access by server
+static int currentEntryIndex = 0;
 
 struct TableEntry {
     char handle[HANDLE_SIZE];
@@ -49,9 +53,11 @@ void socRemoveFromTable(int socketNum) {
     for(int i = 0; i < tableSize; i++) {
         if(serverHandleTable[i].socketNum == socketNum && serverHandleTable[i].isValid == VALID) {
             serverHandleTable[i].isValid = INVALID;
+            numHandles--;
             return;
         }
     }
+
     fprintf(stderr, "Couldn't find table entry to remove\n");
 }
 
@@ -67,6 +73,7 @@ void insertEntry(const char *handle, int socketNum) {
 
     expandTable();
     fillNewEntry(handle, socketNum);
+    numHandles++;
 }
 
 /**
@@ -105,7 +112,7 @@ int handleInUse(const char *handle) {
 int getSocketNum(const char *handle) {
 
     for(int i = 0; i < tableSize; i++){
-        if(strncmp(serverHandleTable[i].handle, handle, HANDLE_SIZE) == 0 && serverHandleTable->isValid == VALID) {
+        if(strncmp(serverHandleTable[i].handle, handle, HANDLE_SIZE) == 0 && serverHandleTable[i].isValid == VALID) {
             return serverHandleTable[i].socketNum;
         }
     }
@@ -114,11 +121,40 @@ int getSocketNum(const char *handle) {
 }
 
 /**
+ * Get num handles in use
+*/
+int getNumHandles() {
+    return numHandles;
+}
+
+/**
+ * For listing and broadcast, populate the next global entry 
+ * listing, returning -1 when end of table reached
+*/
+int getNextHandle(struct GlobalEntry *gEntryPtr) {
+
+    while(currentEntryIndex != tableSize) {
+
+        if(serverHandleTable[currentEntryIndex].isValid == VALID) {
+
+            gEntryPtr->handle = serverHandleTable[currentEntryIndex].handle;
+            gEntryPtr->socketNum = serverHandleTable[currentEntryIndex].socketNum;
+            currentEntryIndex++;
+            return 0;
+        }
+        
+        currentEntryIndex++;
+    }
+
+    currentEntryIndex = 0;
+    return -1; 
+}
+
+/**
  * Free table entries
 */
 void cleanupTable() {
 
     free(serverHandleTable);
-
     tableSize = 0;
 }

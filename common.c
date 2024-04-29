@@ -2,6 +2,7 @@
     
 #include "common.h"
 #include "stddef.h"
+#include "senrec.h"
 
 /**
  * Return length of handle - expects current
@@ -48,4 +49,14 @@ void populatePacketInfo(struct MulticastPacketInfo *multPacketInfoPtr) {
 	}
 
 	multPacketInfoPtr->message = (char *)currPacketBuffer;
+}
+
+/**
+ * Send a packet that just contains chat header
+*/
+void sendHeaderOnly(int targetSocket, uint8_t flag) {
+	uint8_t packetBuffer[FLAG_SIZE];
+
+	packetBuffer[0] = flag;
+	sendPDU(targetSocket, packetBuffer, FLAG_SIZE);
 }

@@ -23,6 +23,7 @@
 #define MULT_INPUT_OFFSET_TO_NUM_HANDLES 3
 #define MULT_INPUT_OFFSET_TO_HANDLES 5
 #define MAX_TEXT_SIZE 200
+#define F11_PKT_SIZE FLAG_SIZE + sizeof(int)
 
 // Handle and length
 struct HandleInfo {
@@ -50,11 +51,15 @@ int getStrLen(char *inputStr);
 */
 void popHandleInfo(struct HandleInfo *handleInfoPtr, uint8_t *packetBuffer);
 
-
 /**
  * Populate the fields of multicast packet struct from a packet buffer
  * Length and packet fields of struct should already be populated
 */
 void populatePacketInfo(struct MulticastPacketInfo *multPacketInfoPtr);
+
+/**
+ * Send a packet that just contains chat header
+*/
+void sendHeaderOnly(int targetSocket, uint8_t flag);
 
 #endif

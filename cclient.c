@@ -262,7 +262,7 @@ void sendMulticast(struct ClientInfo *clientInfoPtr, uint8_t *inputBuffer) {
  * Ask server for client listing
 */
 void sendListing(struct ClientInfo *clientInfoPtr) {
-
+	sendHeaderOnly(clientInfoPtr->socketNum, 10);
 }
 
 /**
@@ -316,15 +316,18 @@ void processInput(struct ClientInfo *clientInfoPtr) {
 }
 
 /**
- * Server couldnt find handle
+ * Server couldn't find handle
 */
-void handleNotFound(uint8_t *packetBuffer) {
+void recvHandleNotFound(uint8_t *packetBuffer) {
 	struct HandleInfo handleInfo;
 
 	popHandleInfo(&handleInfo, packetBuffer + FLAG_SIZE);
 	fprintf(stderr, "\nClient with handle %s does not exist\n", handleInfo.handle);
 }
 
+/**
+ * Recieve multicast/msg
+*/
 void recvMulticast(uint8_t *packetBuffer, int packetLen) {
 	struct MulticastPacketInfo multicastPacketInfo;
 
@@ -333,6 +336,38 @@ void recvMulticast(uint8_t *packetBuffer, int packetLen) {
 	populatePacketInfo(&multicastPacketInfo);
 
 	printf("\n%s: %s\n", multicastPacketInfo.senderInfo.handle, multicastPacketInfo.message);
+}
+
+/**
+ * Populate the next listing packet, returning incoming flag. Dont proc stdin
+*/
+uint8_t getNextListingPacket(struct ClientInfo *clientInfoPtr, uint8_t *packetBuffer) {
+	
+	while(pollCall(-1) != clientInfoPtr->socketNum);
+	recvPDU(clientInfoPtr->socketNum, packetBuffer, MAX_PACKET_SIZE);
+	return packetBuffer[0];
+}
+
+/**
+ * Recieve listing. Read flag 12 packets (blocking) until flag 13 packet
+*/
+void recvListing(struct ClientInfo *clientInfoPtr, uint8_t *firstPacketBuffer) {
+	uint8_t packetBuffer[MAX_PACKET_SIZE];
+	int numHandles = 0;
+	uint8_t incomingFlag = 12;
+	struct HandleInfo handleInfo;
+
+	numHandles = ntohl(*(uint32_t *)(firstPacketBuffer + FLAG_SIZE));
+	printf("\nNumber of clients: %d\n", numHandles);
+
+	// Get first handle packet, dont process stdin
+	incomingFlag = getNextListingPacket(clientInfoPtr, packetBuffer);
+	while(incomingFlag == 12) {
+
+		popHandleInfo(&handleInfo, packetBuffer + FLAG_SIZE);
+		printf("\t%s\n", handleInfo.handle);
+		incomingFlag = getNextListingPacket(clientInfoPtr, packetBuffer);
+	}
 }
 
 /**
@@ -357,11 +392,14 @@ void processMsgFromServer(struct ClientInfo *clientInfoPtr, uint8_t *exitFlagPtr
 			recvMulticast(dataBuffer, inputSize);
 			break;
 		case 7:
-			handleNotFound(dataBuffer);
+			recvHandleNotFound(dataBuffer);
 			break;
 		case 9:
 			*exitFlagPtr = 1;
 			printf("\n");
+			break;
+		case 11:
+			recvListing(clientInfoPtr, dataBuffer);
 			break;
 		default:
 			fprintf(stderr, "Unknown flag\n");
