@@ -491,10 +491,6 @@ void clientTeardown(struct ClientInfo *clientInfoPtr) {
 int main(int argc, char **argv) {
 	struct ClientInfo clientInfo;
 
-	if(argc > 1 && strcmp(argv[1], "manyHandles") == 0) {
-		manyHandles(&clientInfo, argv, argc);
-	}
-
 	clientSetup(&clientInfo, argc, argv);
 	clientControl(&clientInfo);
 	clientTeardown(&clientInfo);	
