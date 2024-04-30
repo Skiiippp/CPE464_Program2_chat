@@ -35,20 +35,27 @@ void popHandleInfo(struct HandleInfo *handleInfoPtr, uint8_t *packetBuffer) {
 void populatePacketInfo(struct MulticastPacketInfo *multPacketInfoPtr) {
 	uint8_t *currPacketBuffer;
 
-	currPacketBuffer = multPacketInfoPtr->packetBuffer + FLAG_SIZE;
+	currPacketBuffer = multPacketInfoPtr->packetBuffer;
+
+	multPacketInfoPtr->flag = *currPacketBuffer;
+	currPacketBuffer += FLAG_SIZE;
 
 	popHandleInfo(&(multPacketInfoPtr->senderInfo), currPacketBuffer);
 	currPacketBuffer += multPacketInfoPtr->senderInfo.handleLen + 1;	// 1 for handle size field
 
-	multPacketInfoPtr->numDestHandles = currPacketBuffer[0];
-	currPacketBuffer += 1;	// Now pointing to len of first dest handle
+	if(multPacketInfoPtr->flag != 4) {
+		multPacketInfoPtr->numDestHandles = currPacketBuffer[0];
+		currPacketBuffer += 1;	// Now pointing to len of first dest handle
+	} else {
+		multPacketInfoPtr->numDestHandles = 0;
+	}
 
 	for(int i = 0; i < multPacketInfoPtr->numDestHandles; i++) {
 		popHandleInfo(&(multPacketInfoPtr->handleInfoList[i]), currPacketBuffer);
 		currPacketBuffer += multPacketInfoPtr->handleInfoList[i].handleLen + 1;
 	}
 
-	multPacketInfoPtr->message = (char *)currPacketBuffer;
+	multPacketInfoPtr->message = (char *)currPacketBuffer;	
 }
 
 /**

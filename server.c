@@ -2,8 +2,9 @@
 * myServer.c
 * 
 * Writen by Prof. Smith, updated Jan 2023
-* Use at your own risk.  
-* Additions/Mods by James Gruber, April 2024
+* Use at your own risk. 
+* 
+* Updated by James Gruber April 2024
 *
 *****************************************************************************/
 
@@ -141,7 +142,6 @@ void sendNoHandle(struct HandleInfo *handleInfoPtr, const struct ServerInfo *ser
  * Send message to client
 */
 void sendMessage(int destSocket, struct MulticastPacketInfo *multicastPacketInfoPtr) {
-
 	sendPDU(destSocket, multicastPacketInfoPtr->packetBuffer, multicastPacketInfoPtr->packetLen);
 }
 
@@ -163,7 +163,23 @@ void forwardMulticast(struct MulticastPacketInfo *multPacketInfoPtr, const struc
 }
 
 /**
- * Handle multicast, should work for message too
+ * Forward broadcast
+*/
+void forwardBroadcast(struct MulticastPacketInfo *bcstPacketInfoPtr, const struct ServerInfo *serverInfoPtr) {
+	struct GlobalEntry globalEntry;
+	int destSocket;
+
+	while(getNextHandle(&globalEntry) != -1) {
+		destSocket = globalEntry.socketNum;
+
+		if(destSocket != serverInfoPtr->currClientSocket) {
+			sendMessage(destSocket, bcstPacketInfoPtr);
+		}
+	}
+}
+
+/**
+ * Handle multicast/msg/broadcast
 */
 void handleMulticast(const struct ServerInfo *serverInfoPtr, uint8_t *incomPacket, int incomPacketSize) {
 	struct MulticastPacketInfo multPacketInfo;
@@ -171,8 +187,12 @@ void handleMulticast(const struct ServerInfo *serverInfoPtr, uint8_t *incomPacke
 	multPacketInfo.packetLen = incomPacketSize;
 	multPacketInfo.packetBuffer = incomPacket;
 	populatePacketInfo(&multPacketInfo);
-	forwardMulticast(&multPacketInfo, serverInfoPtr);
 
+	if(multPacketInfo.flag != 4) {
+		forwardMulticast(&multPacketInfo, serverInfoPtr);
+	} else {
+		forwardBroadcast(&multPacketInfo, serverInfoPtr);
+	}
 }
 
 /**
@@ -256,6 +276,7 @@ void handleClient(const struct ServerInfo *serverInfoPtr) {
 	flag = incomPacket[0];
 
 	switch(flag) {
+		case 4:
 		case 5:
 		case 6:	
 			handleMulticast(serverInfoPtr, incomPacket, incomPacketSize);

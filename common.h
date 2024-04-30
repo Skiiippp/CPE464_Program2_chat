@@ -22,8 +22,10 @@
 #define MSG_INPUT_OFFSET_TO_HANDLE 3
 #define MULT_INPUT_OFFSET_TO_NUM_HANDLES 3
 #define MULT_INPUT_OFFSET_TO_HANDLES 5
-#define MAX_TEXT_SIZE 200
+#define MAX_MSG_SIZE 200	//including null
 #define F11_PKT_SIZE FLAG_SIZE + sizeof(int)
+#define MAX_NUM_MESSAGES 7 // 1400 max input, 200 per message
+#define BROADCAST_OFFSET_TO_MSG 3
 
 // Handle and length
 struct HandleInfo {
@@ -37,8 +39,10 @@ struct MulticastPacketInfo {
 	uint8_t numDestHandles;
 	struct HandleInfo handleInfoList[MAX_DEST_CLIENT];
 	char *message;
+	int messageLen;	// including null
 	int packetLen;	// starting at flag
 	uint8_t *packetBuffer;
+	uint8_t flag;
 };
 
 /**

@@ -3,7 +3,8 @@
 *
 * Writen by Prof. Smith, updated Jan 2023
 * Use at your own risk.  
-* Updated by James Gruber April
+*
+* Updated by James Gruber April 2024
 *
 *****************************************************************************/
 
@@ -136,7 +137,7 @@ void clientTeardown(struct ClientInfo *clientInfoPtr) {
 */
 int readFromStdin(uint8_t * buffer) {
 	char aChar = 0;
-	int inputLen = 0;        
+	int inputLen = 0;   
 
 	// Important you don't input more characters than you have space 
 	buffer[0] = '\0';
@@ -159,7 +160,8 @@ int readFromStdin(uint8_t * buffer) {
 
 /**
  * Populate handle info array in multicast info struct
- * Input buffer should start at point where handle names begin
+ * Input buffer should start at point where handle names begin,
+ * or message for broadcast
  * Only fills packet len from flag to message
 */
 void fillMultHandles(struct MulticastPacketInfo *multPktInfoPtr, uint8_t *inputBuffer) {
@@ -168,6 +170,12 @@ void fillMultHandles(struct MulticastPacketInfo *multPktInfoPtr, uint8_t *inputB
 	uint8_t handleLen;
 	uint8_t *currentBuff = inputBuffer;
 	int packetLen = multPktInfoPtr->senderInfo.handleLen + 3; // flag, sending size, # headers
+
+	if(multPktInfoPtr->flag != 4) {
+		packetLen = multPktInfoPtr->senderInfo.handleLen + 3;	// Not broadcast
+	} else {
+		packetLen = multPktInfoPtr->senderInfo.handleLen + 2; // No num handles
+	}
 
 	numHandles = multPktInfoPtr->numDestHandles;
 	infoList = multPktInfoPtr->handleInfoList;
@@ -179,9 +187,10 @@ void fillMultHandles(struct MulticastPacketInfo *multPktInfoPtr, uint8_t *inputB
 		infoList[i].handle[handleLen] = '\0';	// set null terminator
 		currentBuff += handleLen + 1;	// 1 for space
 	}
+	multPktInfoPtr->packetLen = packetLen;	// Not including message len
 
 	multPktInfoPtr->message = (char *)currentBuff;
-	multPktInfoPtr->packetLen = packetLen;
+	multPktInfoPtr->messageLen = strlen(multPktInfoPtr->message) + 1;	// 1 for null
 }
 
 /**
@@ -196,8 +205,11 @@ void packMultPacket(struct MulticastPacketInfo *multPktInfoPtr, uint8_t *packetB
 	currPacketBuff += 1;
 	memcpy(currPacketBuff, senderInfoPtr->handle, senderInfoPtr->handleLen);
 	currPacketBuff += senderInfoPtr->handleLen;
-	currPacketBuff[0] = multPktInfoPtr->numDestHandles;
-	currPacketBuff += 1;
+
+	if(multPktInfoPtr->flag != 4) {	// Not broadcast
+		currPacketBuff[0] = multPktInfoPtr->numDestHandles;
+		currPacketBuff += 1;
+	}
 
 	for(int i = 0; i < multPktInfoPtr->numDestHandles; i++) {
 		currDestInfoPtr = &(multPktInfoPtr->handleInfoList[i]);
@@ -207,8 +219,36 @@ void packMultPacket(struct MulticastPacketInfo *multPktInfoPtr, uint8_t *packetB
 		currPacketBuff += currDestInfoPtr->handleLen;
 	}
 
-	strncpy((char *)currPacketBuff, multPktInfoPtr->message, MAX_TEXT_SIZE);
-	multPktInfoPtr->packetLen += strlen((char *)currPacketBuff) + 1; // 1 for null 
+	strncpy((char *)currPacketBuff, multPktInfoPtr->message, MAX_MSG_SIZE);
+}
+
+/**
+ * Do final processing and send a message/multicast/broadcast packet
+*/
+void offSend(const struct ClientInfo *clientInfoPtr, struct MulticastPacketInfo *multPktInfoPtr) {
+	int numPackets = 0; // Depends on number of messages needed
+	struct MulticastPacketInfo tempPktInfo;
+	uint8_t *packetBuffer;
+	char messageBuffer[MAX_MSG_SIZE];
+	char *currPktMessage = multPktInfoPtr->message;	// increment as needed
+	int currMessageLen = 0;
+
+	packetBuffer = multPktInfoPtr->packetBuffer;
+	memcpy(&tempPktInfo, multPktInfoPtr, sizeof(struct MulticastPacketInfo));	// Used for packing packet
+	currMessageLen = strlen(multPktInfoPtr->message) + 1;	// 1 for null
+	numPackets = (int)(currMessageLen/MAX_MSG_SIZE) + 1;
+	for(int i = 0; i < numPackets; i++) {
+		strncpy(messageBuffer, currPktMessage, MAX_MSG_SIZE);
+		messageBuffer[MAX_MSG_SIZE - 1] = '\0';
+		currMessageLen = strlen(messageBuffer) + 1; // for null
+		tempPktInfo.message = messageBuffer;
+		tempPktInfo.packetLen += currMessageLen;
+		packMultPacket(&tempPktInfo, packetBuffer + FLAG_SIZE);
+		sendPDU(clientInfoPtr->socketNum, packetBuffer, tempPktInfo.packetLen);
+
+		tempPktInfo.packetLen -= currMessageLen;
+		currPktMessage += MAX_MSG_SIZE - 1;
+	}
 }
 
 /**
@@ -223,17 +263,28 @@ void sendMessage(struct ClientInfo *clientInfoPtr, uint8_t *inputBuffer) {
 	msgPktInfo.numDestHandles = 1;
 
 	packetBuffer[0] = 5;	// flag
+	msgPktInfo.flag = 5;
+	msgPktInfo.packetBuffer = packetBuffer;
 	fillMultHandles(&msgPktInfo, inputBuffer + MSG_INPUT_OFFSET_TO_HANDLE);
-	packMultPacket(&msgPktInfo, packetBuffer + FLAG_SIZE);
-
-	sendPDU(clientInfoPtr->socketNum, packetBuffer, msgPktInfo.packetLen);
+	offSend(clientInfoPtr, &msgPktInfo);
 } 
 
 /**
  * Broadcast a message to all clients except self
 */
 void sendBroadcast(struct ClientInfo *clientInfoPtr, uint8_t *inputBuffer) {
+	struct MulticastPacketInfo bcstPktInfo;
+	uint8_t packetBuffer[MAX_PACKET_SIZE];
 
+	bcstPktInfo.senderInfo.handleLen = clientInfoPtr->handleLen;
+	strncpy(bcstPktInfo.senderInfo.handle, clientInfoPtr->handle, MAX_HANDLE_SIZE);
+	bcstPktInfo.numDestHandles = 0;	// Not actually "true", but just in packet no dest. handles
+
+	packetBuffer[0] = 4;
+	bcstPktInfo.flag = 4;
+	bcstPktInfo.packetBuffer = packetBuffer;
+	fillMultHandles(&bcstPktInfo, inputBuffer + BROADCAST_OFFSET_TO_MSG);
+	offSend(clientInfoPtr, &bcstPktInfo);
 }
 
 /**
@@ -251,11 +302,11 @@ void sendMulticast(struct ClientInfo *clientInfoPtr, uint8_t *inputBuffer) {
 		fprintf(stderr, "Invalid number of destination handles for multicast\n");
 	}
 
-	fillMultHandles(&multPktInfo, inputBuffer + MULT_INPUT_OFFSET_TO_HANDLES);
 	packetBuffer[0] = 6; // flag
-	packMultPacket(&multPktInfo, packetBuffer + FLAG_SIZE);
-
-	sendPDU(clientInfoPtr->socketNum, packetBuffer, multPktInfo.packetLen);
+	multPktInfo.flag = 6;
+	multPktInfo.packetBuffer = packetBuffer;
+	fillMultHandles(&multPktInfo, inputBuffer + MULT_INPUT_OFFSET_TO_HANDLES);
+	offSend(clientInfoPtr, &multPktInfo);
 }
 
 /**
@@ -315,6 +366,7 @@ void processInput(struct ClientInfo *clientInfoPtr) {
 
 }
 
+
 /**
  * Server couldn't find handle
 */
@@ -326,7 +378,7 @@ void recvHandleNotFound(uint8_t *packetBuffer) {
 }
 
 /**
- * Recieve multicast/msg
+ * Recieve multicast/msg/broadcast
 */
 void recvMulticast(uint8_t *packetBuffer, int packetLen) {
 	struct MulticastPacketInfo multicastPacketInfo;
@@ -387,6 +439,7 @@ void processMsgFromServer(struct ClientInfo *clientInfoPtr, uint8_t *exitFlagPtr
 
 	flag = dataBuffer[0];
 	switch(flag) {
+		case 4:
 		case 5:
 		case 6:
 			recvMulticast(dataBuffer, inputSize);
