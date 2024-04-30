@@ -70,7 +70,7 @@ void waitForInitResp(struct ClientInfo *clientInfoPtr) {
 			
 			bytesRecieved = recvPDU(clientInfoPtr->socketNum, dataBuffer, FLAG_SIZE);
 			if(bytesRecieved == 0) {
-				fprintf(stderr, "Server Terminated\n");
+				fprintf(stderr, "\nServer Terminated\n");
 				exit(-1);
 			} else if(bytesRecieved == -1) {
 				fprintf(stderr, "Unknown error occured on initial client recv call\n");
@@ -487,19 +487,6 @@ void clientTeardown(struct ClientInfo *clientInfoPtr) {
 	close(clientInfoPtr->socketNum);
 }
 
-// TESTING - manyHandles() #######
-void manyHandles(struct ClientInfo *clientInfoPtr, char **argv, int argc) {
-
-	for(int i = 0; i < 300; i++) {
-		sprintf(argv[1], "test%d", i);
-		clientSetup(clientInfoPtr, argc, argv);
-	}
-
-	while(1) {
-		pollCall(-1);
-	}
-}
-// TESTING ############
 
 int main(int argc, char **argv) {
 	struct ClientInfo clientInfo;
