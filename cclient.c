@@ -38,6 +38,11 @@ struct ClientInfo {
 	uint8_t handleLen;	// No NULL
 };
 
+// Function prototypes for main control functions
+void clientSetup(struct ClientInfo *clientInfoPtr, int argc, char **argv);
+void clientControl(struct ClientInfo *clientInfoPtr);
+void clientTeardown(struct ClientInfo *clientInfoPtr);
+
 void checkArgs(int argc, char **argv) {
 
 	if (argc != 4) {
@@ -102,34 +107,6 @@ void establishConnection(struct ClientInfo *clientInfoPtr) {
 
 	sendInitialPacket(clientInfoPtr);
 	waitForInitResp(clientInfoPtr);
-}
-
-/**
- * Setup client
-*/
-void clientSetup(struct ClientInfo *clientInfoPtr, int argc, char **argv) {
-
-	checkArgs(argc, argv);
-
-	clientInfoPtr->socketNum = tcpClientSetup(argv[2], argv[3], DEBUG_FLAG);
-	clientInfoPtr->handleLen = strlen(argv[1]);
-	strncpy(clientInfoPtr->handle, argv[1], MAX_HANDLE_SIZE);
-	clientInfoPtr->handleLen = strlen(clientInfoPtr->handle);
-
-	setupPollSet();
-	addToPollSet(clientInfoPtr->socketNum);
-	addToPollSet(STDIN_FILENO);
-
-	establishConnection(clientInfoPtr);
-}
-
-/**
- * Teardown client
-*/
-void clientTeardown(struct ClientInfo *clientInfoPtr) {
-	
-	removeFromPollSet(clientInfoPtr->socketNum);
-	close(clientInfoPtr->socketNum);
 }
 
 /**
@@ -460,6 +437,25 @@ void processMsgFromServer(struct ClientInfo *clientInfoPtr, uint8_t *exitFlagPtr
 }
 
 /**
+ * Setup client
+*/
+void clientSetup(struct ClientInfo *clientInfoPtr, int argc, char **argv) {
+
+	checkArgs(argc, argv);
+
+	clientInfoPtr->socketNum = tcpClientSetup(argv[2], argv[3], DEBUG_FLAG);
+	clientInfoPtr->handleLen = strlen(argv[1]);
+	strncpy(clientInfoPtr->handle, argv[1], MAX_HANDLE_SIZE);
+	clientInfoPtr->handleLen = strlen(clientInfoPtr->handle);
+
+	setupPollSet();
+	addToPollSet(clientInfoPtr->socketNum);
+	addToPollSet(STDIN_FILENO);
+
+	establishConnection(clientInfoPtr);
+}
+
+/**
  * Control client
 */
 void clientControl(struct ClientInfo *clientInfoPtr) {
@@ -482,8 +478,33 @@ void clientControl(struct ClientInfo *clientInfoPtr) {
 	}
 }
 
+/**
+ * Teardown client
+*/
+void clientTeardown(struct ClientInfo *clientInfoPtr) {
+	
+	removeFromPollSet(clientInfoPtr->socketNum);
+	close(clientInfoPtr->socketNum);
+}
+
+// TESTING - manyHandles()
+void manyHandles(struct ClientInfo *clientInfoPtr, char **argv, int argc) {
+
+	for(int i = 0; i < 300; i++) {
+		sprintf(argv[1], "test%d", i);
+		clientSetup(clientInfoPtr, argc, argv);
+	}
+
+	pollCall(-1);
+
+}
+
 int main(int argc, char **argv) {
 	struct ClientInfo clientInfo;
+
+	if(argc > 1 && strcmp(argv[1], "manyHandles") == 0) {
+		manyHandles(&clientInfo, argv, argc);
+	}
 
 	clientSetup(&clientInfo, argc, argv);
 	clientControl(&clientInfo);

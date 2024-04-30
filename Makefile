@@ -7,16 +7,13 @@ LIBS =
 
 OBJS = networks.o gethostbyname.o pollLib.o safeUtil.o senrec.o handleTable.o common.o
 
-all:   cclient server test
+all:   cclient server
 
 cclient: cclient.c $(OBJS)
 	$(CC) $(CFLAGS) -o cclient cclient.c  $(OBJS) $(LIBS)
 
 server: server.c $(OBJS)
 	$(CC) $(CFLAGS) -o server server.c $(OBJS) $(LIBS)
-
-test: test.c $(OBJS)
-	$(CC) $(CFLAGS) -o test test.c $(OBJS) $(LIBS)
 
 .c.o:
 	gcc -c $(CFLAGS) $< -o $@ $(LIBS)
@@ -25,7 +22,7 @@ cleano:
 	rm -f *.o
 
 clean:
-	rm -f server cclient test *.o
+	rm -f server cclient *.o
 
 
 
