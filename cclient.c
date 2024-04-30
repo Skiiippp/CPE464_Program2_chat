@@ -487,7 +487,7 @@ void clientTeardown(struct ClientInfo *clientInfoPtr) {
 	close(clientInfoPtr->socketNum);
 }
 
-// TESTING - manyHandles()
+// TESTING - manyHandles() #######
 void manyHandles(struct ClientInfo *clientInfoPtr, char **argv, int argc) {
 
 	for(int i = 0; i < 300; i++) {
@@ -495,9 +495,11 @@ void manyHandles(struct ClientInfo *clientInfoPtr, char **argv, int argc) {
 		clientSetup(clientInfoPtr, argc, argv);
 	}
 
-	pollCall(-1);
-
+	while(1) {
+		pollCall(-1);
+	}
 }
+// TESTING ############
 
 int main(int argc, char **argv) {
 	struct ClientInfo clientInfo;
