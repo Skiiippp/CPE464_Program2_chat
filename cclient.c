@@ -409,7 +409,7 @@ void processMsgFromServer(struct ClientInfo *clientInfoPtr, uint8_t *exitFlagPtr
 
 	inputSize = recvPDU(clientInfoPtr->socketNum, dataBuffer, MAX_PACKET_SIZE);
 	if(inputSize == 0) {
-		fprintf(stderr, "Server Terminated\n");
+		fprintf(stderr, "\nServer Terminated\n");
 		clientTeardown(clientInfoPtr);
 		exit(-1);
 	} 
